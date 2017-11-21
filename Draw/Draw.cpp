@@ -38,6 +38,15 @@ struct stPicInfo//储存每一步的信息
 	list<tagPOINT> staLineInfo;
 };
 
+struct savestPicInfo//储存每一步的信息存到文件，取消掉list
+{
+	tagPOINT ptFirst;
+	tagPOINT ptEnd;
+	DRAW_TYPE type;
+	COLORREF pencolor;
+	int pointnum;
+};
+
 //list<tagPOINT> staLineInfo;//储存曲线等需要记录点的信息
 //list<list<tagPOINT>> stLineInfo;//储存曲线所有需要记录点的信息
 
@@ -537,9 +546,15 @@ void SavePicFile()
 		sprintf_s(buf, "%d", g_listPicInfo.size());
 		fwrite(buf, Head_Len, 1, pFile);
 
+		savestPicInfo tmp;
 		for (list<stPicInfo>::iterator it = g_listPicInfo.begin();it != g_listPicInfo.end();it++)
 		{
-			fwrite(&(*it), sizeof(stPicInfo), 1, pFile);
+			tmp.pencolor = it->pencolor;
+			tmp.pointnum = it->pointnum;
+			tmp.ptEnd = it->ptEnd;
+			tmp.ptFirst = it->ptFirst;
+			tmp.type = it->type;
+			fwrite(&tmp, sizeof(savestPicInfo), 1, pFile);
 			if (it->pointnum > 0)//是点集类
 			{
 				for (list<tagPOINT>::iterator i = it->staLineInfo.begin();i != it->staLineInfo.end();i++)
@@ -582,7 +597,7 @@ void OpenPicFile()
 		int sizePic = atoi(bufTemp);
 		for (int i = 0;i < sizePic;i++)
 		{
-			stPicInfo readstInfo;
+			savestPicInfo readstInfo;
 			stPicInfo stInfo;
 			fread(&readstInfo, sizeof(readstInfo), 1, pFile);
 			stInfo.pencolor = readstInfo.pencolor;
