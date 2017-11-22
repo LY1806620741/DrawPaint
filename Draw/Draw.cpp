@@ -26,7 +26,8 @@ enum DRAW_TYPE
 	DRAW_LINE,
 	DRAW_RECTANGLE,
 	DRAW_CIRCULAR,
-	DRAW_BEZIER
+	DRAW_BEZIER,
+	DRAW_BEZIER_EDIT
 };
 struct stPicInfo//储存每一步的信息
 {
@@ -34,7 +35,7 @@ struct stPicInfo//储存每一步的信息
 	tagPOINT ptEnd;
 	DRAW_TYPE type;
 	COLORREF pencolor;
-	int pointnum;
+	int pointnum=0;
 	list<tagPOINT> staLineInfo;
 };
 
@@ -59,6 +60,8 @@ tagPOINT g_ptFirst;//当前正在画的鼠标的点
 tagPOINT g_ptEnd;
 HWND g_hwnd;
 COLORREF penColor;
+int step = 0;//步数
+POINT apt[10];//bezier曲线点
 
 void OnLButtonDown(LPARAM lParam);
 void OnLButtonUp(LPARAM lParam);
@@ -69,6 +72,8 @@ void SavePicFile();
 void OpenPicFile();
 void OnMouseMove(LPARAM lParam);
 void paint(stPicInfo& data, tagPOINT ptFirst, tagPOINT ptEnd);
+void OnRButtonUp(LPARAM lParam);//右键弹起
+void bezierLine(HDC hDc, list<tagPOINT> point);//画bezier曲线
 
 // 此代码模块中包含的函数的前向声明: 
 ATOM                MyRegisterClass(HINSTANCE hInstance);
@@ -195,18 +200,23 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             {
 			case ID_Drawpaint:
 				m_DrawType = DRAW_PAINT;
+				g_curDrawPicInfo.staLineInfo.clear();
 				break;
 			case ID_Drawline:
 				m_DrawType = DRAW_LINE;
+				g_curDrawPicInfo.staLineInfo.clear();
 				break;
 			case ID_Drawrectangle:
 				m_DrawType = DRAW_RECTANGLE;
+				g_curDrawPicInfo.staLineInfo.clear();
 				break;
 			case ID_Drawcircucle:
 				m_DrawType = DRAW_CIRCULAR;
+				g_curDrawPicInfo.staLineInfo.clear();
 				break;
 			case ID_save:
 				SavePicFile();
+				g_curDrawPicInfo.staLineInfo.clear();
 				break;
 			case ID_open:
 				OpenPicFile();
@@ -235,6 +245,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 					penColor = stChooseColor.rgbResult;
 				}
 			}
+				break;
+			case ID_Drawbezier:
+				step = 1;//开始选点
+				g_curDrawPicInfo.staLineInfo.clear();
+				m_DrawType = DRAW_BEZIER_EDIT;
 				break;
             case IDM_ABOUT:
                 DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
@@ -266,6 +281,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		break;
 	case WM_MOUSEMOVE:
 		OnMouseMove(lParam);
+		break;
+	case WM_RBUTTONUP:
+		OnRButtonUp(lParam);
 		break;
     default:
         return DefWindowProc(hWnd, message, wParam, lParam);
@@ -326,7 +344,7 @@ void DrawAll()
 	{
 		DrawPic(*it, dcMem);//绘制到dcMem
 	}
-	if (g_bIsMouseDown)//临时图像
+	if (g_bIsMouseDown||m_DrawType==DRAW_BEZIER_EDIT)//临时图像
 	{
 		//tagPOINT pt;
 		//GetCursorPos(&pt);//鼠标行对雨电脑屏幕的点
@@ -359,7 +377,7 @@ void DrawPic(stPicInfo info, HDC hDc) {
 		tmp.y = info.staLineInfo.begin()->y;
 		for (list<tagPOINT>::iterator it = info.staLineInfo.begin();it != info.staLineInfo.end();it++)
 		{
-			SetPixel(hDc, it->x, it->y, info.pencolor);
+			//SetPixel(hDc, it->x, it->y, info.pencolor);
 			tagPOINT pt;
 			MoveToEx(hDc, tmp.x, tmp.y, &pt);
 			LineTo(hDc, it->x, it->y);
@@ -405,7 +423,45 @@ void DrawPic(stPicInfo info, HDC hDc) {
 	}
 		break;
 	case DRAW_BEZIER:
+	{
+		HPEN pen = CreatePen(PS_SOLID, 1, info.pencolor);
+		HPEN old = (HPEN)SelectObject(hDc, pen);
+		SelectObject(hDc, pen);
+		tagPOINT pt;
+		MoveToEx(hDc, info.ptFirst.x, info.ptFirst.y, &pt);
+		LineTo(hDc, info.ptEnd.x, info.ptEnd.y);
+		DeleteObject(old);
+	}
 		break;
+	case DRAW_BEZIER_EDIT:
+	{
+		HPEN pen = CreatePen(PS_SOLID, 1, info.pencolor);
+		HPEN old = (HPEN)SelectObject(hDc, pen);
+		SelectObject(hDc, pen);
+		tagPOINT pt;
+		int i = 0;
+		for (list<tagPOINT>::iterator it = info.staLineInfo.begin();it != info.staLineInfo.end();it++)
+		{
+			if (it == info.staLineInfo.begin())
+			{
+				MoveToEx(hDc, it->x, it->y, &pt);
+			}
+			LineTo(hDc, it->x, it->y);
+			HGDIOBJ hBrush = GetStockBrush(NULL_BRUSH);
+			SelectObject(hDc, hBrush);
+			Rectangle(hDc, it->x - 3, it->y - 3, it->x + 4, it->y + 4);
+			DeleteObject(hBrush);
+			apt[i].x = it->x;
+			apt[i].y = it->y;
+			i++;
+		}
+		if (info.staLineInfo.size() >= 4)
+		{
+			PolyBezier(hDc, apt, info.staLineInfo.size());
+		}
+		DeleteObject(old);
+	}
+	break;
 	default:
 		break;
 	}
@@ -508,7 +564,49 @@ void OnLButtonUp(LPARAM lParam)
 		g_listPicInfo.push_back(stInfo);
 	}
 		break;
-	case DRAW_BEZIER:
+	case DRAW_BEZIER_EDIT:
+	{
+		if (step == 1)
+		{
+			g_curDrawPicInfo.staLineInfo.push_back(g_ptEnd);
+		}
+		if (step == 4)
+		{
+
+		}
+			break;
+	}
+		break;
+	default:
+		break;
+	}
+}
+
+void OnRButtonUp(LPARAM lParam) {//右键弹起
+	switch (m_DrawType)
+	{
+	case DRAW_BEZIER_EDIT:
+		if (g_curDrawPicInfo.staLineInfo.size()>=2)
+		{
+			switch(step)
+			{
+			case 1:
+				step = 4;
+				break;
+			case 4:
+			{
+				stPicInfo stInfo;
+				stInfo.type = DRAW_BEZIER;
+				memcpy(&stInfo.ptFirst, &g_ptFirst, sizeof(tagPOINT));
+				memcpy(&stInfo.ptEnd, &g_ptEnd, sizeof(tagPOINT));
+				memcpy(&stInfo.pencolor, &penColor, sizeof(COLORREF));
+				g_listPicInfo.push_back(stInfo);
+				g_curDrawPicInfo.staLineInfo.clear();
+				step = 1;
+			}
+			break;
+			}
+		}
 		break;
 	default:
 		break;
@@ -615,6 +713,7 @@ void OpenPicFile()
 				}
 			}
 			g_listPicInfo.push_back(stInfo);
+			stInfo.staLineInfo.clear();
 		}
 		fclose(pFile);
 	}
@@ -641,4 +740,9 @@ void paint(stPicInfo& data, tagPOINT ptFirst, tagPOINT ptEnd)
 	}*/
 	data.staLineInfo.push_back(ptEnd);
 	data.ptFirst = data.ptEnd;
+}
+
+void bezierLine(HDC hDc, list<tagPOINT> point)
+{
+
 }
