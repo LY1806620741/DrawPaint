@@ -60,8 +60,8 @@ tagPOINT g_ptFirst;//当前正在画的鼠标的点
 tagPOINT g_ptEnd;
 HWND g_hwnd;
 COLORREF penColor;
+list<tagPOINT>::iterator Linepointtmp;
 int step = 0;//步数
-POINT apt[10];//bezier曲线点
 
 void OnLButtonDown(LPARAM lParam);
 void OnLButtonUp(LPARAM lParam);
@@ -73,7 +73,39 @@ void OpenPicFile();
 void OnMouseMove(LPARAM lParam);
 void paint(stPicInfo& data, tagPOINT ptFirst, tagPOINT ptEnd);
 void OnRButtonUp(LPARAM lParam);//右键弹起
-void bezierLine(HDC hDc, list<tagPOINT> point);//画bezier曲线
+void bezierLine(HDC hDc, list<tagPOINT> point,COLORREF penColor);//画bezier曲线
+tagPOINT bezierpoit(double t,list<tagPOINT> point);//计算bezier点
+
+//小函数
+int fac(int num)//阶乘函数
+{
+	if (num == 0 || num == 1)
+	{
+		return 1;
+	}
+
+	int sum=1;
+	for (int i=2;i <= num;i++)//代码优化省去*1
+	{
+		sum *= i;
+	}
+	return sum;
+}
+int c(int m,int n) //求组合值Cmn=n!/(n-m)!/m!,但是尽量减少不必要的阶乘
+{
+	if (m == 0)
+	{
+		return 1;
+	}
+	int sum=1;
+	int i = n;
+	for (int j=0;j < m;j++,i--)
+	{
+		sum *= i;
+	}//求得n!/(n-m)!
+	sum = sum / fac(m);
+	return sum;
+}
 
 // 此代码模块中包含的函数的前向声明: 
 ATOM                MyRegisterClass(HINSTANCE hInstance);
@@ -424,13 +456,7 @@ void DrawPic(stPicInfo info, HDC hDc) {
 		break;
 	case DRAW_BEZIER:
 	{
-		HPEN pen = CreatePen(PS_SOLID, 1, info.pencolor);
-		HPEN old = (HPEN)SelectObject(hDc, pen);
-		SelectObject(hDc, pen);
-		tagPOINT pt;
-		MoveToEx(hDc, info.ptFirst.x, info.ptFirst.y, &pt);
-		LineTo(hDc, info.ptEnd.x, info.ptEnd.y);
-		DeleteObject(old);
+		bezierLine(hDc, info.staLineInfo, info.pencolor);
 	}
 		break;
 	case DRAW_BEZIER_EDIT:
@@ -439,7 +465,6 @@ void DrawPic(stPicInfo info, HDC hDc) {
 		HPEN old = (HPEN)SelectObject(hDc, pen);
 		SelectObject(hDc, pen);
 		tagPOINT pt;
-		int i = 0;
 		for (list<tagPOINT>::iterator it = info.staLineInfo.begin();it != info.staLineInfo.end();it++)
 		{
 			if (it == info.staLineInfo.begin())
@@ -451,13 +476,10 @@ void DrawPic(stPicInfo info, HDC hDc) {
 			SelectObject(hDc, hBrush);
 			Rectangle(hDc, it->x - 3, it->y - 3, it->x + 4, it->y + 4);
 			DeleteObject(hBrush);
-			apt[i].x = it->x;
-			apt[i].y = it->y;
-			i++;
 		}
-		if (info.staLineInfo.size() >= 4)
+		if (step==4&&info.staLineInfo.size() >= 2)//画线函数
 		{
-			PolyBezier(hDc, apt, info.staLineInfo.size());
+			bezierLine(hDc,info.staLineInfo, info.pencolor);
 		}
 		DeleteObject(old);
 	}
@@ -480,6 +502,17 @@ void OnLButtonDown(LPARAM lParam)
 	g_curDrawPicInfo.type = m_DrawType;//临时图像
 	g_curDrawPicInfo.pencolor = penColor;
 	g_curDrawPicInfo.ptEnd = g_ptFirst;
+	if (m_DrawType == DRAW_BEZIER_EDIT&&step==4)
+	{
+		for (list<tagPOINT>::iterator i = g_curDrawPicInfo.staLineInfo.begin();i != g_curDrawPicInfo.staLineInfo.end();i++)
+		{
+			RECT tmp = { i->x - 3,i->y - 3,i->x + 4,i->y + 4 };
+			if (PtInRect(&tmp, g_ptFirst))
+			{
+				Linepointtmp = i;
+			}
+		}
+	}
 }
 void OnMouseMove(LPARAM lParam)
 {
@@ -493,6 +526,13 @@ void OnMouseMove(LPARAM lParam)
 		g_curDrawPicInfo.ptEnd.x = GET_X_LPARAM(lParam);
 		g_curDrawPicInfo.ptEnd.y = GET_Y_LPARAM(lParam);
 		paint(g_curDrawPicInfo,g_curDrawPicInfo.ptFirst, g_curDrawPicInfo.ptEnd);
+		break;
+	case DRAW_BEZIER_EDIT:
+		if(step==4)
+		{
+			Linepointtmp->x = GET_X_LPARAM(lParam);
+			Linepointtmp->y = GET_Y_LPARAM(lParam);
+		}
 		break;
 	default:
 		g_curDrawPicInfo.ptEnd.x = GET_X_LPARAM(lParam);
@@ -572,7 +612,6 @@ void OnLButtonUp(LPARAM lParam)
 		}
 		if (step == 4)
 		{
-
 		}
 			break;
 	}
@@ -600,6 +639,14 @@ void OnRButtonUp(LPARAM lParam) {//右键弹起
 				memcpy(&stInfo.ptFirst, &g_ptFirst, sizeof(tagPOINT));
 				memcpy(&stInfo.ptEnd, &g_ptEnd, sizeof(tagPOINT));
 				memcpy(&stInfo.pencolor, &penColor, sizeof(COLORREF));
+				tagPOINT tmp;
+				for (list<tagPOINT>::iterator i = g_curDrawPicInfo.staLineInfo.begin();i != g_curDrawPicInfo.staLineInfo.end();i++)
+				{
+					tmp.x = i->x;
+					tmp.y = i->y;
+					stInfo.staLineInfo.push_back(tmp);
+				}
+				stInfo.pointnum = stInfo.staLineInfo.size();
 				g_listPicInfo.push_back(stInfo);
 				g_curDrawPicInfo.staLineInfo.clear();
 				step = 1;
@@ -742,7 +789,103 @@ void paint(stPicInfo& data, tagPOINT ptFirst, tagPOINT ptEnd)
 	data.ptFirst = data.ptEnd;
 }
 
-void bezierLine(HDC hDc, list<tagPOINT> point)
+void bezierLine(HDC hDc, list<tagPOINT> point, COLORREF penColor)
 {
+	if (point.size() < 2)
+	{
+		return;
+	}
+	tagPOINT tmp;
+	for (double i = 0.000;i < 1;i += 0.001)//画每一点
+	{
+		tmp=bezierpoit(i, point);
+		SetPixel(hDc, tmp.x, tmp.y,penColor);
+	}
+}
+tagPOINT bezierpoit(double t,list<tagPOINT> point)
+{
+	//double f0 = 1.0;
+	//double f1 = 3 * t - 3 * t*t + t*t*t;
+	//double f2 = 3 * t*t - 2 * t*t*t;
+	//double f3 = t*t*t;
+	tagPOINT tmp;
+	if (t == 0)
+	{
+		tmp.x = point.begin()->x;
+		tmp.y = point.begin()->y;
+		return tmp;
+	}
+	list<double> f;//储存基函数
+	//计算基函数
+	f.push_back(1.0);//代码优化
+	int n = point.size()-1;
+	for (int i = 1;i<n+1;i++)
+	{
+		double temp=0;
+		for (int j = i;j < n+1;j++)
+		{
+			temp += pow(-1, i + j)*c(j, n)*c(i - 1, j - 1)*pow(t, j);//基函数公式
+			//temp += pow(t, j)*pow((1 - t), n - j);//伯恩斯坦多項式
+		}
+		f.push_back(temp);
+	}
+	list<tagPOINT>::iterator i = point.begin();
+	list<tagPOINT>::iterator j = point.begin();//上一个
+	list<double>::iterator k = f.begin();
+	double x;
+	double y;
+	for (x=i->x,y=i->y,i++,k++;i != point.end();i++,j++,k++)
+	{
+		x = x + (i->x - j->x)**k;
+		y = y + (i->y - j->y)**k;
+	}
+	//求得坐标
 
+	/*错误的近似的认知
+	if (point.size() == 2)//两个点
+	{
+		double f1 = 3 * t - 3 * t*t + t*t*t;
+		x = i->x;
+		y = i->y;
+		i++;
+		x = x + (i->x-j->x)*f1;
+		y = y + (i->y-j->y)*f1;
+	}
+	if (point.size() == 3)//三个点
+	{
+		double f1 = 3 * t - 3 * t*t + t*t*t;
+		double f2 = 3 * t*t - 2 * t*t*t;
+		x = i->x;
+		y = i->y;
+		i++;
+		x = x + (i->x-j->x)*f1;
+		y = y + (i->y-j->y)*f1;
+		i++;
+		j++;
+		x = x + (i->x-j->x)*f2;
+		y = y + (i->y-j->y)*f2;
+	}
+	if (point.size() > 3)
+	{
+		double f1 = 3 * t - 3 * t*t + t*t*t;
+		double f2 = 3 * t*t - 2 * t*t*t;
+		double f3 = t*t*t;
+		x = i->x;
+		y = i->y;
+		i++;
+		x = x + (i->x-j->x)*f1;
+		y = y + (i->y-j->y)*f1;
+		i++;
+		j++;
+		x = x + (i->x-j->x)*f2;
+		y = y + (i->y-j->y)*f2;
+		for (i++,j++;i != point.end();i++,j++)
+		{
+			x = x + (i->x-j->x)*f3;
+			y = y + (i->y-j->y)*f3;
+		}
+	}*/
+	tmp.x = (int)x;
+	tmp.y = (int)y;
+	return tmp;
 }
