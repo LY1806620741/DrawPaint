@@ -12,6 +12,7 @@ using namespace std;
 
 #define MAX_LOADSTRING 100
 #define Head_Len 20
+#define TIME 50
 
 // 全局变量: 
 HINSTANCE hInst;                                // 当前实例
@@ -62,6 +63,7 @@ HWND g_hwnd;
 COLORREF penColor;
 list<tagPOINT>::iterator Linepointtmp;
 int step = 0;//步数
+bool run = true;
 
 void OnLButtonDown(LPARAM lParam);
 void OnLButtonUp(LPARAM lParam);
@@ -205,6 +207,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
    ShowWindow(hWnd, nCmdShow);
    UpdateWindow(hWnd);
 
+   MessageBox(hWnd, L"1.由于使用了多线程，导致了list不安全，在保存撤销清空等需要操作list数组的线程开始时，如果list正在使用，并被修改就会抛出崩溃",L"存在问题",NULL);
    _beginthread(&DrawThread,0,NULL);
 
    return TRUE;
@@ -258,7 +261,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 					g_listPicInfo.pop_back();
 				break;
 			case ID_clear://清空画布菜单
+				run = false;
+				Sleep(TIME);
 				g_listPicInfo.clear();
+				run = true;
 				break;
 			case ID_selectcolor://选择颜色菜单
 			{
@@ -347,8 +353,11 @@ void DrawThread(void* param)
 {
 	while (1)
 	{
-		DrawAll();
-		Sleep(50);
+		if (run)
+		{
+			DrawAll();
+		}
+		Sleep(TIME);
 	}
 
 }
@@ -378,10 +387,6 @@ void DrawAll()
 	}
 	if (g_bIsMouseDown||m_DrawType==DRAW_BEZIER_EDIT)//临时图像
 	{
-		//tagPOINT pt;
-		//GetCursorPos(&pt);//鼠标行对雨电脑屏幕的点
-		//ScreenToClient(g_hwnd, &pt);//转换成了窗口客户区坐标
-		//memcpy(&g_curDrawPicInfo.ptEnd, &pt, sizeof(tagPOINT));
 		DrawPic(g_curDrawPicInfo, dcMem);
 	}
 	BitBlt(hDc, 0, 0, 800, 600, dcMem, 0, 0, SRCCOPY);
@@ -408,8 +413,7 @@ void DrawPic(stPicInfo info, HDC hDc) {
 		tmp.x = info.staLineInfo.begin()->x;
 		tmp.y = info.staLineInfo.begin()->y;
 		for (list<tagPOINT>::iterator it = info.staLineInfo.begin();it != info.staLineInfo.end();it++)
-		{
-			//SetPixel(hDc, it->x, it->y, info.pencolor);
+		{;
 			tagPOINT pt;
 			MoveToEx(hDc, tmp.x, tmp.y, &pt);
 			LineTo(hDc, it->x, it->y);
@@ -662,6 +666,8 @@ void OnRButtonUp(LPARAM lParam) {//右键弹起
 
 void SavePicFile()
 {
+	run = false;
+	Sleep(TIME);
 	OPENFILENAME ofn;
 	ZeroMemory(&ofn, sizeof(ofn));
 
@@ -702,17 +708,25 @@ void SavePicFile()
 			fwrite(&tmp, sizeof(savestPicInfo), 1, pFile);
 			if (it->pointnum > 0)//是点集类
 			{
+				int errcheck = 0;
 				for (list<tagPOINT>::iterator i = it->staLineInfo.begin();i != it->staLineInfo.end();i++)
 				{
-					fwrite(&(*i), sizeof(tagPOINT), 1, pFile);
+					int t=fwrite(&(*i), sizeof(tagPOINT), 1, pFile);
+					if (t != 1)
+					{
+						MessageBox(g_hwnd,L"保存出错",L"",NULL);
+					};
 				}
 			}
 		}
 		fclose(pFile);
 	}
+	run = true;
 }
 void OpenPicFile()
 {
+	run = false;
+	Sleep(TIME);
 	OPENFILENAME ofn;
 	ZeroMemory(&ofn, sizeof(ofn));
 
@@ -755,7 +769,27 @@ void OpenPicFile()
 				tagPOINT tmp;
 				for (int j = 0;j < stInfo.pointnum;j++)
 				{
-					fread(&tmp, sizeof(tagPOINT), 1, pFile);
+					int t=fread(&tmp, sizeof(tagPOINT), 1, pFile);
+					if (t != 1)
+					{
+						MessageBox(g_hwnd, L"读取不成功", L"", NULL);
+						stInfo.staLineInfo.clear();
+						stInfo.pointnum = 0;
+						run = true;
+						return;
+					};
+					if (ferror(pFile))
+					{
+						MessageBox(g_hwnd, L"读取出错", L"", NULL);
+						stInfo.staLineInfo.clear();
+						stInfo.pointnum = 0;
+						run = true;
+						return;
+					};
+					if (ferror(pFile))
+					{
+						MessageBox(g_hwnd, L"文件尾", L"", NULL);
+					}
 					stInfo.staLineInfo.push_back(tmp);
 				}
 			}
@@ -764,6 +798,7 @@ void OpenPicFile()
 		}
 		fclose(pFile);
 	}
+	run = true;
 }
 
 void paint(stPicInfo& data, tagPOINT ptFirst, tagPOINT ptEnd)
@@ -774,17 +809,6 @@ void paint(stPicInfo& data, tagPOINT ptFirst, tagPOINT ptEnd)
 	{
 		return;
 	}
-	/*
-	double length = sqrt(len_x*len_x + len_y*len_y);
-	int step_x = len_x / length;
-	int step_y = len_y / length;
-	//tagPOINT point;
-	for (int i=0;i < (int)length;i++)
-	{
-		point.x = ptFirst.x + step_x;
-		point.y = ptFirst.y + step_y;
-		data.staLineInfo.push_back(point);
-	}*/
 	data.staLineInfo.push_back(ptEnd);
 	data.ptFirst = data.ptEnd;
 }
@@ -796,7 +820,7 @@ void bezierLine(HDC hDc, list<tagPOINT> point, COLORREF penColor)
 		return;
 	}
 	tagPOINT tmp;
-	for (double i = 0.000;i < 1;i += 0.001)//画每一点
+	for (double i = 0.000;i < 1;i += 0.005)//画每一点
 	{
 		tmp=bezierpoit(i, point);
 		SetPixel(hDc, tmp.x, tmp.y,penColor);
@@ -804,10 +828,6 @@ void bezierLine(HDC hDc, list<tagPOINT> point, COLORREF penColor)
 }
 tagPOINT bezierpoit(double t,list<tagPOINT> point)
 {
-	//double f0 = 1.0;
-	//double f1 = 3 * t - 3 * t*t + t*t*t;
-	//double f2 = 3 * t*t - 2 * t*t*t;
-	//double f3 = t*t*t;
 	tagPOINT tmp;
 	if (t == 0)
 	{
@@ -841,50 +861,6 @@ tagPOINT bezierpoit(double t,list<tagPOINT> point)
 	}
 	//求得坐标
 
-	/*错误的近似的认知
-	if (point.size() == 2)//两个点
-	{
-		double f1 = 3 * t - 3 * t*t + t*t*t;
-		x = i->x;
-		y = i->y;
-		i++;
-		x = x + (i->x-j->x)*f1;
-		y = y + (i->y-j->y)*f1;
-	}
-	if (point.size() == 3)//三个点
-	{
-		double f1 = 3 * t - 3 * t*t + t*t*t;
-		double f2 = 3 * t*t - 2 * t*t*t;
-		x = i->x;
-		y = i->y;
-		i++;
-		x = x + (i->x-j->x)*f1;
-		y = y + (i->y-j->y)*f1;
-		i++;
-		j++;
-		x = x + (i->x-j->x)*f2;
-		y = y + (i->y-j->y)*f2;
-	}
-	if (point.size() > 3)
-	{
-		double f1 = 3 * t - 3 * t*t + t*t*t;
-		double f2 = 3 * t*t - 2 * t*t*t;
-		double f3 = t*t*t;
-		x = i->x;
-		y = i->y;
-		i++;
-		x = x + (i->x-j->x)*f1;
-		y = y + (i->y-j->y)*f1;
-		i++;
-		j++;
-		x = x + (i->x-j->x)*f2;
-		y = y + (i->y-j->y)*f2;
-		for (i++,j++;i != point.end();i++,j++)
-		{
-			x = x + (i->x-j->x)*f3;
-			y = y + (i->y-j->y)*f3;
-		}
-	}*/
 	tmp.x = (int)x;
 	tmp.y = (int)y;
 	return tmp;
