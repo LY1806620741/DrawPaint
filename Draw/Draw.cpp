@@ -687,7 +687,7 @@ void SavePicFile()
 		char strFileName[MAX_PATH] = { 0 };
 		wcstombs_s(&connerted, strFileName, len, ofn.lpstrFile, _TRUNCATE);
 		FILE* pFile;
-		fopen_s(&pFile, strFileName, "w");
+		fopen_s(&pFile, strFileName, "wb");
 		if (pFile == NULL)
 		{
 			return;
@@ -743,7 +743,7 @@ void OpenPicFile()
 		char strFileName[MAX_PATH] = { 0 };
 		wcstombs_s(&connerted, strFileName, len, ofn.lpstrFile, _TRUNCATE);
 		FILE* pFile;
-		fopen_s(&pFile, strFileName, "r");
+		fopen_s(&pFile, strFileName, "rb");
 		if (pFile == NULL)
 		{
 			return;
