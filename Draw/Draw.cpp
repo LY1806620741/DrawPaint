@@ -786,9 +786,13 @@ void DrawPic(stPicInfo info, HDC hDc,HDC dcMem) {
 			}
 			LineTo(dcMem, it->x, it->y);
 			HGDIOBJ hBrush = GetStockBrush(NULL_BRUSH);
+			HPEN penr = CreatePen(PS_SOLID, 1, RGB(255,0,0));
 			SelectObject(dcMem, hBrush);
+			SelectObject(dcMem, penr);
 			Rectangle(dcMem, it->x - 3, it->y - 3, it->x + 4, it->y + 4);
 			DeleteObject(hBrush);
+			DeleteObject(penr);
+			SelectObject(dcMem, pen);
 		}
 		if (step==4&&info.staLineInfo.size() >= 2)//»­Ïßº¯Êý
 		{
